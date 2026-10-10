@@ -1,6 +1,6 @@
 {
   "name": "odt-as-txt",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "license": "MIT",
   "type": "commonjs",
   "displayName": "odt-as-txt",
@@ -11,22 +11,33 @@
     "onCustomEditor:odtViewer.readonly"
   ],
   "contributes": {
-    "customEditors": [
+    "commands": [
       {
-        "viewType": "odtViewer.readonly",
-        "displayName": "ODT Viewer (read-only)",
-        "selector": [
-          {
-            "filenamePattern": "*.odt"
-          }
-        ],
-        "priority": "default"
+        "command": "odtViewer.open",
+        "title": "Open ODT as Plain Text"
       }
-    ]
+    ],
+    "menus": {
+      "explorer/context": [
+        {
+          "command": "odtViewer.open",
+          "when": "resourceExtname == .odt",
+          "group": "navigation"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "odtViewer.open",
+          "when": "false"
+        }
+      ]
+    }
   },
   "main": "./dist/extension.js",
   "scripts": {
-    "compile": "npx tsc"
+    "compile": "npx tsc",
+    "test": "vitest run",
+    "pack": "npx @vscode/vsce package"
   },
   "engines": {
     "vscode": "^1.137.0"
@@ -35,9 +46,10 @@
     "jszip": "^3.10.2"
   },
   "devDependencies": {
-    "@types/vscode": "^1.137.0",
     "@types/node": "^20.19.2",
+    "@types/vscode": "^1.137.0",
     "@vscode/vsce": "^4.0.0",
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.3"
   }
 }

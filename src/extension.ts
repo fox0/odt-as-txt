@@ -1,84 +1,85 @@
 import * as vscode from 'vscode';
 import { extractPlainText } from './text';
 
-class OdtDocument implements vscode.CustomDocument {
-    constructor(public readonly uri: vscode.Uri) {}
+/**
+ * Провайдер содержимого для виртуальной схемы `odt-plain`.
+ *
+ * VS Code вызывает provideTextDocumentContent, когда открывает документ
+ * с URI схемы `odt-plain`. Возвращённая строка отображается в обычном
+ * текстовом редакторе — со всеми штатными возможностями: Ctrl+F, выделение,
+ * копирование, переходы по строкам, мини-карта, темы.
+ *
+ * Документ автоматически read-only: VS Code не позволяет редактировать
+ * содержимое, полученное от TextDocumentContentProvider.
+ */
+class OdtContentProvider implements vscode.TextDocumentContentProvider {
 
-    dispose(): void {}
-}
+    // Кэш: строковый URI → извлечённый текст.
+    // Нужен, чтобы не парсить ODT повторно при каждом рендере вкладки.
+    private readonly cache = new Map<string, string>();
 
-class OdtEditorProvider implements vscode.CustomReadonlyEditorProvider<OdtDocument> {
-
-    // Вызывается, когда VS Code собирается открыть .odt.
-    // Здесь можно прочитать/распарсить файл заранее, чтобы не делать
-    // это повторно при каждом рендере. Мы оставим ленивое чтение в Webview.
-    async openCustomDocument(
-        uri: vscode.Uri,
-        _openContext: vscode.CustomDocumentOpenContext,
-        _token: vscode.CancellationToken
-    ): Promise<OdtDocument> {
-        return new OdtDocument(uri);
-    }
-
-    // Вызывается один раз на вкладку. Здесь наполняем Webview.
-    async resolveCustomEditor(
-        document: OdtDocument,
-        webviewPanel: vscode.WebviewPanel,
-        _token: vscode.CancellationToken
-    ): Promise<void> {
-        webviewPanel.webview.options = {
-            enableScripts: false, // нам JS не нужен
-        };
-
-        // Читаем ODT и извлекаем plain text
-        let text: string;
-        try {
-            const buf = await vscode.workspace.fs.readFile(document.uri);
-            text = await extractPlainText(buf);
-        } catch (e: any) {
-            text = `Ошибка чтения ODT: ${e.message}`;
+    async provideTextDocumentContent(uri: vscode.Uri): Promise<string> {
+        const key = uri.toString();
+        const cached = this.cache.get(key);
+        if (cached !== undefined) {
+            return cached;
         }
 
-        // Экранируем HTML, чтобы текст отображался как есть
-        const escaped = text
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;');
+        // Реальный путь к .odt хранится в query-части виртуального URI.
+        const realUri = vscode.Uri.file(uri.query);
 
-        webviewPanel.webview.html = `
-            <!DOCTYPE html>
-            <html lang="ru">
-            <head>
-                <meta charset="UTF-8">
-                <style>
-                    body {
-                        font-family: var(--vscode-editor-font-family);
-                        font-size: var(--vscode-editor-font-size);
-                        color: var(--vscode-editor-foreground);
-                        background: var(--vscode-editor-background);
-                        padding: 1em;
-                        white-space: pre-wrap;
-                        word-wrap: break-word;
-                    }
-                </style>
-            </head>
-            <body>${escaped}</body>
-            </html>
-        `;
+        try {
+            const buf = await vscode.workspace.fs.readFile(realUri);
+            const text = await extractPlainText(buf);
+            this.cache.set(key, text);
+            return text;
+        } catch (e: any) {
+            return `Ошибка чтения ODT: ${e.message}`;
+        }
+    }
+
+    /** Сбрасывает кэш для конкретного виртуального URI. */
+    invalidate(uri: vscode.Uri): void {
+        this.cache.delete(uri.toString());
     }
 }
 
 export function activate(context: vscode.ExtensionContext) {
+    const provider = new OdtContentProvider();
+
+    // Регистрируем схему `odt-plain` — теперь VS Code знает,
+    // у кого спрашивать содержимое для URI этой схемы.
     context.subscriptions.push(
-        vscode.window.registerCustomEditorProvider(
-            'odtViewer.readonly',              // == viewType из package.json
-            new OdtEditorProvider(),
-            {
-                webviewOptions: { retainContextWhenHidden: true },
-                supportsMultipleEditorsPerDocument: false,
+        vscode.workspace.registerTextDocumentContentProvider('odt-plain', provider)
+    );
+
+    // Команда открытия. VS Code передаёт URI файла из контекстного меню
+    // первым аргументом. Если команда вызвана программно (без URI) —
+    // попробуем взять активный редактор.
+    context.subscriptions.push(
+        vscode.commands.registerCommand('odtViewer.open', async (uri?: vscode.Uri) => {
+            const target = uri ?? vscode.window.activeTextEditor?.document.uri;
+
+            if (!target) {
+                vscode.window.showErrorMessage('Не удалось определить файл для открытия.');
+                return;
             }
-        )
+
+            // Собираем виртуальный URI:
+            //   scheme  = odt-plain  (наш провайдер)
+            //   path    = имя файла + .txt  (определяет язык → plaintext)
+            //   query   = реальный fsPath (провайдеру нужно знать, что читать)
+            const fileName = target.path.split('/').pop() ?? 'document.odt';
+            const virtualUri = vscode.Uri.from({
+                scheme: 'odt-plain',
+                path: '/' + fileName + '.txt',
+                query: target.fsPath,
+            });
+
+            const doc = await vscode.workspace.openTextDocument(virtualUri);
+            await vscode.window.showTextDocument(doc, { preview: false });
+        })
     );
 }
 
-export function deactivate() {}
+export function deactivate() { }
