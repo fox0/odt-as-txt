@@ -72,7 +72,7 @@ export function activate(context: vscode.ExtensionContext) {
             const fileName = target.path.split('/').pop() ?? 'document.odt';
             const virtualUri = vscode.Uri.from({
                 scheme: 'odt-plain',
-                path: '/' + fileName + '.txt',
+                path: '/' + fileName + '.md',
                 query: target.fsPath,
             });
 
