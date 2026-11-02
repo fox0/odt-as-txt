@@ -14,33 +14,16 @@ import { extractPlainText } from './text';
  */
 class OdtContentProvider implements vscode.TextDocumentContentProvider {
 
-    // Кэш: строковый URI → извлечённый текст.
-    // Нужен, чтобы не парсить ODT повторно при каждом рендере вкладки.
-    private readonly cache = new Map<string, string>();
-
     async provideTextDocumentContent(uri: vscode.Uri): Promise<string> {
-        const key = uri.toString();
-        const cached = this.cache.get(key);
-        if (cached !== undefined) {
-            return cached;
-        }
-
         // Реальный путь к .odt хранится в query-части виртуального URI.
         const realUri = vscode.Uri.file(uri.query);
 
         try {
             const buf = await vscode.workspace.fs.readFile(realUri);
-            const text = await extractPlainText(buf);
-            this.cache.set(key, text);
-            return text;
+            return await extractPlainText(buf);
         } catch (e: any) {
             return `Ошибка чтения ODT: ${e.message}`;
         }
-    }
-
-    /** Сбрасывает кэш для конкретного виртуального URI. */
-    invalidate(uri: vscode.Uri): void {
-        this.cache.delete(uri.toString());
     }
 }
 
@@ -67,7 +50,7 @@ export function activate(context: vscode.ExtensionContext) {
 
             // Собираем виртуальный URI:
             //   scheme  = odt-plain  (наш провайдер)
-            //   path    = имя файла + .txt  (определяет язык → plaintext)
+            //   path    = имя файла + .md  (определяет язык → markdown)
             //   query   = реальный fsPath (провайдеру нужно знать, что читать)
             const fileName = target.path.split('/').pop() ?? 'document.odt';
             const virtualUri = vscode.Uri.from({

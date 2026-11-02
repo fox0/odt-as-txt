@@ -6,6 +6,7 @@ WARNING: vibe-code chat.geepseek
 git clone https://github.com/fox0/odt-as-txt
 npm install
 npm run compile
+# "vitest": "^5.0.5"
 npm run test
 npm run pack
 code --install-extension odt-as-txt-*.vsix
